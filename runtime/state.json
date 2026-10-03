@@ -2,19 +2,7 @@
   "refunds": [],
   "returns": [],
   "tickets": [],
-  "escalations": [
-    {
-      "escalation_id": "ESC-AF59417C55",
-      "customer_id": "CUST-00001",
-      "order_id": null,
-      "team": "Support Lead",
-      "priority": "medium",
-      "reason": "Customer explicitly requested a human agent.",
-      "status": "queued",
-      "created_at": "2026-10-03T15:40:56.853663",
-      "idempotency_key": "escalate:CUST-00001:None:Support Lead:customer explicitly requested a human agent."
-    }
-  ],
+  "escalations": [],
   "address_updates": [],
   "wallet_credits": [],
   "action_log": []

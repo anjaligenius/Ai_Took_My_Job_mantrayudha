@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -14,6 +14,7 @@ from app.tools.registry import ToolRegistry
 from app.llm import GeminiLLM, OptionalLLM
 from app.agent.orchestrator import AgentOrchestrator
 from app.models import ChatRequest, ChatResponse, MutationRequest, GeminiConfigRequest
+from app.invoice_pdf import generate_invoice_pdf
 
 app=FastAPI(title=APP_NAME, version=APP_VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
@@ -67,6 +68,24 @@ def customer_detail(customer_id:str):
 @app.get('/api/policies')
 def policies():
     return compiler.compiled
+
+@app.get('/api/invoice/{order_id}/pdf')
+def download_invoice_pdf(order_id: str):
+    order = store.get_order(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    customer = store.get_customer(order.get('customer_id', '')) or {'customer_id': order.get('customer_id', 'N/A')}
+    items = store.get_order_items(order_id)
+    products = [store.get_product(it['product_id']) for it in items]
+    pdf_bytes = generate_invoice_pdf(order, customer, items, products)
+    return Response(
+        content=pdf_bytes,
+        media_type='application/pdf',
+        headers={
+            'Content-Disposition': f'attachment; filename="Invoice_{order_id}.pdf"',
+            'Cache-Control': 'no-cache',
+        }
+    )
 
 @app.get('/api/examples')
 def examples():

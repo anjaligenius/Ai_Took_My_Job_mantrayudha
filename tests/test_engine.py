@@ -322,3 +322,17 @@ def test_variant_order_formats():
     assert res['decision']=='ANSWER'
     assert o['order_id'] in res['customer_response']
 
+
+def test_download_invoice_pdf_endpoint():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    client = TestClient(app)
+    store, _, _, _ = build()
+    o = store.orders[0]
+    res = client.get(f"/api/invoice/{o['order_id']}/pdf")
+    assert res.status_code == 200
+    assert res.headers['content-type'] == 'application/pdf'
+    assert res.headers['content-disposition'] == f'attachment; filename="Invoice_{o["order_id"]}.pdf"'
+    assert res.content.startswith(b'%PDF')
+    assert len(res.content) > 1000
+

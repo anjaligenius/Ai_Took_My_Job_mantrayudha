@@ -393,7 +393,7 @@ class AgentOrchestrator:
         lines.extend([
             "",
             "💡 **Helpful Actions**:",
-            f"• To download tax invoice: `Download invoice for {order['order_id']}`",
+            f"• To download tax invoice: `Download invoice for {order['order_id']}` ([Download PDF](/api/invoice/{order['order_id']}/pdf))",
             f"• To report a defect or request return: `Return item in {order['order_id']}`",
             f"• To talk with human support: `Connect me to human agent`"
         ])
@@ -638,7 +638,8 @@ class AgentOrchestrator:
             f"• **Grand Total Paid**: INR {float(order.get('total_amount', 0)):,.0f}",
             f"• Payment Method: {order.get('payment_method', '').replace('_', ' ').title()} ({order.get('payment_status', '').title()})",
             "",
-            "📄 *This is a system-generated electronic tax invoice with digital signature for your NovaMart purchase.*"
+            "📄 *This is a system-generated electronic tax invoice with digital signature for your NovaMart purchase.*",
+            f"📥 **[Click here to download PDF Tax Invoice](/api/invoice/{order['order_id']}/pdf)**"
         ])
         return {
             'decision': 'ANSWER',
@@ -646,7 +647,7 @@ class AgentOrchestrator:
             'customer_response': '\n'.join(lines),
             'intent_id': intent['id'],
             'actions': [],
-            'evidence': {'customer_verified': True, 'order_owned': True, 'invoice_generated': True, 'order_id': order['order_id']},
+            'evidence': {'customer_verified': True, 'order_owned': True, 'invoice_generated': True, 'order_id': order['order_id'], 'invoice_pdf_url': f"/api/invoice/{order['order_id']}/pdf"},
             'policy': {}
         }
 
