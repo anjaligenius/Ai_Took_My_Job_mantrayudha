@@ -1,7 +1,11 @@
+.env
+venv/
 .venv/
 __pycache__/
+*.py[cod]
+*.db
 .pytest_cache/
-*.pyc
-report_render/
-pdf_verify/
-runtime/policy_overlay.json
+.streamlit/secrets.toml
+demo/*.mp4
+.claude/
+RESUME_BULLETS.md
