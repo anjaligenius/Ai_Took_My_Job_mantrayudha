@@ -159,13 +159,40 @@ class AgentOrchestrator:
                     items = self.store.get_order_items(o['order_id'])
                     pnames = [self.store.get_product(it['product_id'])['product_name'] for it in items if self.store.get_product(it['product_id'])]
                     recent_lines.append(f"• {o['order_id']} ({o.get('order_date','')[:10]}, {o.get('order_status','').title()}): {', '.join(pnames[:2])}")
-                resp = f"Order {oid} is not associated with your authenticated account ({customer.get('first_name','')} {customer.get('last_name','')}). For your privacy and security, I can only look up orders belonging to your verified profile."
+                resp = (
+                    f"⚠️ **SECURITY WARNING: UNAUTHORIZED ORDER ACCESS ATTEMPT**\n\n"
+                    f"Order **{oid}** is not associated with your authenticated account ({customer.get('first_name','')} {customer.get('last_name','')}, ID: `{customer['customer_id']}`). "
+                    f"This access attempt has been **flagged and recorded** in our security audit log.\n\n"
+                    f"🛡️ **Privacy & Security Protection**: You are strictly authorized to view tracking or download invoices only for orders placed under your own verified profile."
+                )
                 if recent_lines:
-                    resp += "\n\nYour recent orders on file:\n" + "\n".join(recent_lines)
+                    resp += "\n\nYour verified orders on file:\n" + "\n".join(recent_lines)
                     resp += "\n\nIf this order was placed under a different account, please switch customer profiles."
                 else:
                     resp += " No orders were found under this account."
-                return {'decision':'ASK','reason':'Order not associated with customer account.','customer_response':resp,'intent_id':intent['id'],'actions':[],'evidence':{'customer_verified':True,'order_owned':False},'policy':{}}
+                trace.append({
+                    'stage': 'SECURITY',
+                    'status': 'FLAGGED',
+                    'detail': f'Security Alert: Unauthorized access attempt for order {oid} by customer {customer["customer_id"]}. Flagged and blocked.'
+                })
+                evidence['unauthorized_access_flag'] = True
+                evidence['order_owned'] = False
+                evidence['attempted_order_id'] = oid
+                return {
+                    'decision': 'ASK',
+                    'reason': f'Security Flag: Order {oid} does not belong to authenticated customer.',
+                    'customer_response': resp,
+                    'intent_id': intent['id'],
+                    'actions': [],
+                    'evidence': {
+                        'customer_verified': True,
+                        'order_owned': False,
+                        'unauthorized_access_flag': True,
+                        'security_warning_issued': True,
+                        'flagged_order_id': oid
+                    },
+                    'policy': {}
+                }
             if ownership_issue == 'not_found':
                 oid = intent.get('order_id') or 'specified'
                 cust_orders = self.store.customer_orders(customer['customer_id'])

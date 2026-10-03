@@ -336,3 +336,40 @@ def test_download_invoice_pdf_endpoint():
     assert res.content.startswith(b'%PDF')
     assert len(res.content) > 1000
 
+
+def test_unowned_order_security_warning_and_flag():
+    store, _, tools, agent = build()
+    c = store.customers[0]
+    other = next(o for o in store.orders if o['customer_id'] != c['customer_id'])
+    res = agent.run(c['customer_id'], f"What is the status of my order {other['order_id']}?", '2026-10-03T12:00:00+05:30')
+    assert res['decision'] == 'ASK'
+    assert 'SECURITY WARNING' in res['customer_response']
+    assert other['order_id'] in res['customer_response']
+    assert res['evidence']['unauthorized_access_flag'] is True
+    assert res['evidence']['order_owned'] is False
+    assert any(t.get('stage') == 'SECURITY' and t.get('status') == 'FLAGGED' for t in res['trace'])
+
+
+def test_invoice_pdf_ownership_forbidden():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    client = TestClient(app)
+    store, _, _, _ = build()
+    c = store.customers[0]
+    other = next(o for o in store.orders if o['customer_id'] != c['customer_id'])
+    res = client.get(f"/api/invoice/{other['order_id']}/pdf?customer_id={c['customer_id']}")
+    assert res.status_code == 403
+    assert 'does not belong to your account' in res.json()['detail']
+
+
+def test_invoice_pdf_ownership_authorized():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    client = TestClient(app)
+    store, _, _, _ = build()
+    o = store.orders[0]
+    res = client.get(f"/api/invoice/{o['order_id']}/pdf?customer_id={o['customer_id']}")
+    assert res.status_code == 200
+    assert res.headers['content-type'] == 'application/pdf'
+    assert res.content.startswith(b'%PDF')
+

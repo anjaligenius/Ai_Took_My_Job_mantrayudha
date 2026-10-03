@@ -70,10 +70,15 @@ def policies():
     return compiler.compiled
 
 @app.get('/api/invoice/{order_id}/pdf')
-def download_invoice_pdf(order_id: str):
+def download_invoice_pdf(order_id: str, customer_id: str | None = None):
     order = store.get_order(order_id)
     if not order:
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
+    if customer_id and order.get('customer_id') != customer_id:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Security Alert: Order {order_id} does not belong to your account ({customer_id}). Access is strictly prohibited."
+        )
     customer = store.get_customer(order.get('customer_id', '')) or {'customer_id': order.get('customer_id', 'N/A')}
     items = store.get_order_items(order_id)
     products = [store.get_product(it['product_id']) for it in items]

@@ -1302,7 +1302,9 @@
       // Format markdown links [text](url)
       html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(match, label, url) {
         if (url.includes('/pdf')) {
-          return `<a href="${url}" target="_blank" download class="chat-pdf-btn">📄 ${label}</a>`;
+          const m = url.match(/ORD-\d{6}/);
+          const oid = m ? m[0] : '';
+          return `<button type="button" class="chat-pdf-btn" onclick="downloadInvoicePdf('${oid}'); return false;">📄 ${label}</button>`;
         }
         return `<a href="${url}" target="_blank" class="chat-link">${label}</a>`;
       });
@@ -1419,8 +1421,7 @@
             </div>
             <div class="order-action-chips" onclick="event.stopPropagation()">
               <button class="order-action-btn" onclick="insertPrompt('What is the status of my order ${o.order_id}?')">Status</button>
-              <button class="order-action-btn" onclick="insertPrompt('Download tax invoice for ${o.order_id}')">Invoice</button>
-              <button class="order-action-btn" style="color:#ff8589;border-color:rgba(239,36,43,0.35);" onclick="downloadInvoicePdf('${o.order_id}')" title="Download official PDF Tax Invoice">📄 PDF</button>
+              <button class="order-action-btn" style="color:#ff8589;border-color:rgba(239,36,43,0.35);background:rgba(239,36,43,0.08);" onclick="downloadInvoicePdf('${o.order_id}')" title="Download official PDF Tax Invoice">📄 Invoice PDF</button>
               <button class="order-action-btn" onclick="insertPrompt('I want to return order ${o.order_id}')">Return</button>
             </div>
           </div>
@@ -1472,11 +1473,16 @@
       if (!e) return;
       if (e.customer_id && e.customer_id !== $('customerSelect').value) {
         $('customerSelect').value = e.customer_id;
-        loadCustomer(e.customer_id);
+        loadCustomer(e.customer_id).then(() => {
+          $('chatInput').value = e.message;
+          autoGrowTextarea();
+          submitMessage();
+        });
+        return;
       }
       $('chatInput').value = e.message;
-      $('chatInput').focus();
       autoGrowTextarea();
+      submitMessage();
     }
 
     function insertPrompt(text) {
@@ -1560,8 +1566,11 @@
         typingEl.remove();
 
         // Append Agent response
+        const isFlagged = (response.evidence && (response.evidence.unauthorized_access_flag || response.evidence.order_owned === false)) ||
+                          (response.trace && response.trace.some(t => t.stage === 'SECURITY' && t.status === 'FLAGGED')) ||
+                          (response.customer_response && response.customer_response.includes('SECURITY WARNING'));
         appendAgentMessage(response);
-        updateDecisionPill(response.decision);
+        updateDecisionPill(isFlagged ? 'FLAGGED' : response.decision);
       } catch (err) {
         typingEl.remove();
         appendErrorMessage(err.message || 'Error processing request.');
@@ -1622,6 +1631,26 @@
       if (!targetOid && res.customer_response) {
         const m = res.customer_response.match(/ORD-\d{6}/);
         if (m) targetOid = m[0];
+      }
+
+      // Check if the request is security flagged (unowned order access attempt)
+      const isSecurityFlagged = (res.evidence && (res.evidence.unauthorized_access_flag || res.evidence.order_owned === false)) ||
+                                (res.trace && res.trace.some(t => t.stage === 'SECURITY' && t.status === 'FLAGGED')) ||
+                                (res.customer_response && res.customer_response.includes('SECURITY WARNING'));
+      
+      let securityBannerHtml = '';
+      if (isSecurityFlagged) {
+        targetOid = null; // NEVER allow actions on an unowned order!
+        securityBannerHtml = `
+          <div style="background: rgba(239, 36, 43, 0.14); border: 1px solid rgba(239, 36, 43, 0.45); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; color: #ff8589; font-size: 12px; font-weight: 700;">
+            <span style="font-size: 18px;">🚨</span>
+            <div>
+              <div style="color:#fff;font-size:12px;margin-bottom:2px;">SECURITY WARNING: UNAUTHORIZED ORDER ACCESS</div>
+              <div style="font-weight:400;color:#ffb3b6;font-size:11.5px;">This order is not associated with your account. Access attempt has been flagged and logged.</div>
+            </div>
+          </div>
+        `;
+        showToast('⚠️ Unauthorized order access attempt flagged', '🚨');
       }
 
       // Check if order details exist in currentCustomerDetails for visual stepper
@@ -1686,13 +1715,14 @@
         <div class="msg-bubble">
           <div class="msg-header">
             <span class="msg-sender">NovaMart Guardian</span>
-            <span class="decision-pill ${decClass}">${decision}</span>
+            <span class="decision-pill ${isSecurityFlagged ? 'escalate' : decClass}">${isSecurityFlagged ? 'FLAGGED' : decision}</span>
             <span class="msg-time">${time}</span>
             <button class="copy-msg-btn" onclick="copyMessage(this)" title="Copy message text">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
               <span>Copy</span>
             </button>
           </div>
+          ${securityBannerHtml}
           ${stepperHtml}
           <div class="msg-body-content" style="font-size:13.5px;color:#f0eef5;">${formattedResp}</div>
           ${actionChipsHtml}
@@ -1766,8 +1796,9 @@
 
     function updateDecisionPill(decision) {
       const pill = $('chatDecisionPill');
-      pill.className = `decision-pill ${(decision || 'waiting').toLowerCase()}`;
-      pill.textContent = decision || 'READY';
+      const cls = decision === 'FLAGGED' ? 'escalate' : (decision || 'waiting').toLowerCase();
+      pill.className = `decision-pill ${cls}`;
+      pill.textContent = decision === 'FLAGGED' ? 'SECURITY FLAGGED' : (decision || 'READY');
     }
 
     function clearMessages() {
@@ -1813,19 +1844,42 @@
       window._toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
     }
 
-    // Direct PDF Invoice Download
-    function downloadInvoicePdf(orderId) {
+    // Direct PDF Invoice Download with robust blob handling and customer verification
+    async function downloadInvoicePdf(orderId) {
       if (!orderId) {
         alert('Order ID is required to download invoice.');
         return;
       }
-      showToast(`Downloading Tax Invoice for ${orderId}...`, '📄');
-      const a = document.createElement('a');
-      a.href = `/api/invoice/${encodeURIComponent(orderId)}/pdf`;
-      a.download = `Invoice_${orderId}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      showToast(`Generating Tax Invoice for ${orderId}...`, '📄');
+      try {
+        const custId = $('customerSelect') ? $('customerSelect').value : '';
+        const url = `/api/invoice/${encodeURIComponent(orderId)}/pdf` + (custId ? `?customer_id=${encodeURIComponent(custId)}` : '');
+        const res = await fetch(url);
+        if (!res.ok) {
+          const errData = await res.text();
+          let msg = 'Failed to download invoice';
+          try { msg = JSON.parse(errData).detail || msg; } catch(e) { msg = errData || msg; }
+          showToast(`⚠️ ${msg}`, '🚨');
+          alert(`Security Warning / Download Error:\n\n${msg}`);
+          return;
+        }
+        const blob = await res.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = blobUrl;
+        a.download = `Invoice_${orderId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(blobUrl);
+        }, 3000);
+        showToast(`Tax invoice for ${orderId} downloaded!`, '✅');
+      } catch (err) {
+        console.error('Download error:', err);
+        window.open(`/api/invoice/${encodeURIComponent(orderId)}/pdf`, '_blank');
+      }
     }
 
     // Copy Message text (ChatGPT / Claude style)
